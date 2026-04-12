@@ -1,9 +1,6 @@
 'use client'
 import { useRef, useEffect, useState, useCallback } from 'react'
-import {
-  MediaPlayer, MediaProvider, Track,
-  type MediaPlayerInstance,
-} from '@vidstack/react'
+import { MediaPlayer, MediaProvider, Track, type MediaPlayerInstance } from '@vidstack/react'
 import { DefaultVideoLayout, defaultLayoutIcons } from '@vidstack/react/player/layouts/default'
 import '@vidstack/react/player/styles/default/theme.css'
 import '@vidstack/react/player/styles/default/layouts/video.css'
@@ -18,51 +15,6 @@ interface StreamData {
   outro: SkipTime | null
 }
 
-// ── Translucent glass skip button ─────────────────────────────────────────────
-function SkipBtn({
-  label, visible, onSkip,
-}: { label: string; visible: boolean; onSkip: () => void }) {
-  const [hovered, setHovered] = useState(false)
-
-  return (
-    <button
-      onClick={onSkip}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        position: 'absolute',
-        bottom: 72,
-        right: 16,
-        zIndex: 50,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '8px 18px',
-        fontFamily: "'Geist Mono', ui-monospace, monospace",
-        fontSize: 13,
-        fontWeight: 600,
-        color: '#fff',
-        letterSpacing: '0.02em',
-        cursor: 'pointer',
-        border: '1px solid rgba(255,255,255,0.22)',
-        borderRadius: 0, // squarish
-        background: hovered ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.55)',
-        backdropFilter: 'blur(14px)',
-        WebkitBackdropFilter: 'blur(14px)',
-        boxShadow: '0 4px 24px rgba(0,0,0,0.45)',
-        transition: 'background 0.15s, opacity 0.2s, transform 0.2s',
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(0)' : 'translateY(6px)',
-        pointerEvents: visible ? 'auto' : 'none',
-      }}
-    >
-      <SkipForward size={15} />
-      Skip {label}
-    </button>
-  )
-}
-
-// ── Main player ───────────────────────────────────────────────────────────────
 export default function EmbedPlayer({ epId, lang }: { epId: string; lang: string }) {
   const playerRef  = useRef<MediaPlayerInstance>(null)
   const mediaElRef = useRef<HTMLVideoElement | null>(null)
@@ -72,8 +24,8 @@ export default function EmbedPlayer({ epId, lang }: { epId: string; lang: string
   const [error, setError]             = useState('')
   const [blobSubs, setBlobSubs]       = useState<StreamTrack[]>([])
   const [currentTime, setCurrentTime] = useState(0)
-  const [showIntro, setShowIntro]     = useState(false)
-  const [showOutro, setShowOutro]     = useState(false)
+  const [showSkipIntro, setShowSkipIntro] = useState(false)
+  const [showSkipOutro, setShowSkipOutro] = useState(false)
 
   const emit = useCallback((event: string, extra?: object) => {
     window.parent?.postMessage({ channel: 'cosmic', event, epId, lang, ...extra }, '*')
@@ -92,7 +44,7 @@ export default function EmbedPlayer({ epId, lang }: { epId: string; lang: string
       .finally(() => setLoading(false))
   }, [epId, lang])
 
-  // Preload subtitles as blob URLs to avoid CORS/network lag
+  // Preload subtitles as blob URLs — no CORS lag, instant display
   useEffect(() => {
     if (!stream?.tracks?.length) { setBlobSubs([]); return }
     let cancelled = false
@@ -121,7 +73,7 @@ export default function EmbedPlayer({ epId, lang }: { epId: string; lang: string
     }
   }, [stream?.tracks])
 
-  // Wire timeupdate on native video element
+  // Wire timeupdate on the native video element (same pattern as reference)
   useEffect(() => {
     const player = playerRef.current
     if (!player || !stream?.hlsUrl) return
@@ -135,7 +87,9 @@ export default function EmbedPlayer({ epId, lang }: { epId: string; lang: string
       const onTime = () => {
         const t = el.currentTime
         setCurrentTime(t)
-        if (!el.paused && el.duration > 0) emit('time', { time: t })
+        if (!el.paused && el.duration > 0) {
+          emit('time', { time: t, duration: el.duration })
+        }
       }
 
       const onEnded = () => emit('complete')
@@ -163,10 +117,10 @@ export default function EmbedPlayer({ epId, lang }: { epId: string; lang: string
     }
   }, [stream?.hlsUrl, emit])
 
-  // Show/hide skip buttons
+  // Show/hide skip buttons based on currentTime
   useEffect(() => {
-    setShowIntro(!!(stream?.intro && currentTime >= stream.intro.start && currentTime < stream.intro.end))
-    setShowOutro(!!(stream?.outro && currentTime >= stream.outro.start && currentTime < stream.outro.end))
+    setShowSkipIntro(!!(stream?.intro && currentTime >= stream.intro.start && currentTime < stream.intro.end))
+    setShowSkipOutro(!!(stream?.outro && currentTime >= stream.outro.start && currentTime < stream.outro.end))
   }, [currentTime, stream?.intro, stream?.outro])
 
   const skipIntro = useCallback(() => {
@@ -204,19 +158,7 @@ export default function EmbedPlayer({ epId, lang }: { epId: string; lang: string
     >
       {/* White Vidstack theme */}
       <style>{`
-        :root {
-          --media-brand: #ffffff;
-          --media-focus-ring-color: rgba(255,255,255,0.4);
-          --media-slider-track-fill-bg: #ffffff;
-          --media-time-slider-track-fill-bg: #ffffff;
-          --media-live-button-bg: #ffffff;
-        }
-        .vds-play-button svg, .vds-mute-button svg, .vds-fullscreen-button svg,
-        .vds-pip-button svg, .vds-caption-button svg, .vds-settings-button svg,
-        .vds-seek-button svg { color: #ffffff !important; }
-        .vds-time { color: rgba(255,255,255,0.85) !important; }
-        .vds-slider-track-fill { background: #ffffff !important; }
-        .vds-slider-thumb { background: #ffffff !important; border-color: #ffffff !important; }
+        :root { --media-brand: #ffffff; --media-focus-ring-color: rgba(255,255,255,0.4); }
         .vds-controls { background: linear-gradient(to top, rgba(0,0,0,0.75) 0%, transparent 100%) !important; }
       `}</style>
 
@@ -227,6 +169,7 @@ export default function EmbedPlayer({ epId, lang }: { epId: string; lang: string
         crossOrigin="anonymous"
         playsInline
         autoPlay
+        onError={() => emit('error')}
       >
         <MediaProvider>
           {tracks.map((t, i) => (
@@ -247,10 +190,68 @@ export default function EmbedPlayer({ epId, lang }: { epId: string; lang: string
       </MediaPlayer>
 
       {/* Skip Intro — translucent glass */}
-      <SkipBtn label="Intro" visible={showIntro} onSkip={skipIntro} />
+      {showSkipIntro && (
+        <button
+          onClick={skipIntro}
+          className="absolute bottom-16 right-4 flex items-center gap-2 font-mono text-sm font-semibold transition-all"
+          style={{
+            background: 'rgba(0,0,0,0.55)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            borderRadius: 8,
+            padding: '8px 16px',
+            color: '#fff',
+            zIndex: 50,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 13,
+            fontWeight: 600,
+            fontFamily: "'Geist Mono',ui-monospace,monospace",
+            letterSpacing: '0.02em',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.55)')}
+        >
+          <SkipForward size={15} />
+          Skip Intro
+        </button>
+      )}
 
-      {/* Skip Outro — translucent glass */}
-      <SkipBtn label="Ending" visible={showOutro} onSkip={skipOutro} />
+      {/* Skip Outro / Ending — translucent glass */}
+      {showSkipOutro && (
+        <button
+          onClick={skipOutro}
+          className="absolute bottom-16 right-4 flex items-center gap-2 font-mono text-sm font-semibold transition-all"
+          style={{
+            background: 'rgba(0,0,0,0.55)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            borderRadius: 8,
+            padding: '8px 16px',
+            color: '#fff',
+            zIndex: 50,
+            boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            fontSize: 13,
+            fontWeight: 600,
+            fontFamily: "'Geist Mono',ui-monospace,monospace",
+            letterSpacing: '0.02em',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.15)')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'rgba(0,0,0,0.55)')}
+        >
+          <SkipForward size={15} />
+          Skip Ending
+        </button>
+      )}
     </div>
   )
 }
