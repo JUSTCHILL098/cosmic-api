@@ -1,86 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-// Common referers used by anime stream servers
-const REFERERS = [
-  'https://megacloud.blog/',
-  'https://rapid-cloud.co/',
-  'https://aniwatchtv.to/',
-  'https://hianime.to/',
-  'https://aniwatch.to/',
-]
-
-async function fetchWithReferer(url: string, referer: string) {
-  return fetch(url, {
-    headers: {
-      'Referer': referer,
-      'Origin': new URL(referer).origin,
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': '*/*',
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Sec-Fetch-Dest': 'empty',
-      'Sec-Fetch-Mode': 'cors',
-      'Sec-Fetch-Site': 'cross-site',
-    },
-  })
-}
+// External proxy that handles MegaCloud CDN auth
+const EXT_PROXY = 'https://pro-xi-mocha.vercel.app/?url='
 
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get('url')
   if (!url) return new NextResponse('Missing url', { status: 400 })
 
-  // Optional: caller can hint which referer to use
-  const refererHint = req.nextUrl.searchParams.get('ref')
-
   try {
     const decoded = decodeURIComponent(url)
+    const isM3u8 = decoded.includes('.m3u8') || decoded.includes('m3u8')
 
-    // Try referers in order until one works
-    const refererList = refererHint
-      ? [refererHint, ...REFERERS]
-      : REFERERS
+    // Fetch through external proxy which handles CDN auth
+    const proxyUrl = `${EXT_PROXY}${encodeURIComponent(decoded)}`
+    const r = await fetch(proxyUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      },
+    })
 
-    let r: Response | null = null
-    for (const referer of refererList) {
-      try {
-        const res = await fetchWithReferer(decoded, referer)
-        if (res.ok || res.status === 206) {
-          r = res
-          break
-        }
-      } catch { /* try next */ }
-    }
-
-    // Last resort — no referer
-    if (!r) {
-      r = await fetch(decoded, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        },
-      })
-    }
-
-    if (!r.ok && r.status !== 206) {
+    if (!r.ok) {
       return new NextResponse(`Upstream error: ${r.status}`, { status: r.status })
     }
 
-    const contentType = r.headers.get('content-type') ?? 'application/octet-stream'
     const body = await r.arrayBuffer()
-    const isM3u8 = contentType.includes('mpegurl') || decoded.includes('.m3u8') || decoded.includes('m3u8')
+    const contentType = r.headers.get('content-type') ?? 'application/octet-stream'
 
     if (isM3u8) {
       const text = new TextDecoder().decode(body)
       const base = decoded.substring(0, decoded.lastIndexOf('/') + 1)
 
+      // Rewrite all segment/key URLs to go through our proxy
       const rewritten = text.split('\n').map(line => {
         const trimmed = line.trim()
         if (!trimmed || trimmed.startsWith('#')) return line
-
-        // Absolute URL
-        if (trimmed.startsWith('http')) {
-          return `/api/proxy?url=${encodeURIComponent(trimmed)}`
-        }
-        // Relative URL
-        return `/api/proxy?url=${encodeURIComponent(base + trimmed)}`
+        const segUrl = trimmed.startsWith('http') ? trimmed : base + trimmed
+        return `/api/proxy?url=${encodeURIComponent(segUrl)}`
       }).join('\n')
 
       return new NextResponse(rewritten, {
@@ -88,12 +43,12 @@ export async function GET(req: NextRequest) {
           'Content-Type': 'application/vnd.apple.mpegurl',
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, OPTIONS',
-          'Cache-Control': 'no-cache, no-store',
+          'Cache-Control': 'no-cache',
         },
       })
     }
 
-    // TS/MP4 segments and key files
+    // TS segments, key files, etc.
     return new NextResponse(body, {
       headers: {
         'Content-Type': contentType,
