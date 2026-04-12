@@ -1,7 +1,7 @@
 'use client'
 import { useRouter } from 'next/navigation'
 import { motion } from 'motion/react'
-import { ArrowLeft, Github, Globe, Zap } from 'lucide-react'
+import { ArrowLeft, Globe, Zap } from 'lucide-react'
 
 export default function AboutDevs() {
   const router = useRouter()
