@@ -37,7 +37,7 @@ export async function GET(
     if (!hlsUrl) return NextResponse.json({ success: false, error: 'No stream URL' }, { status: 404 })
 
     // 3. Use external proxy directly — handles CDN auth + CORS
-    const proxiedUrl = `https://pro-xi-mocha.vercel.app/?url=${encodeURIComponent(hlsUrl)}`
+    const proxiedUrl = `https://pro-xi-mocha.vercel.app/m3u8-proxy?url=${encodeURIComponent(hlsUrl)}`
 
     const tracks = (res?.tracks ?? item?.tracks ?? []).map((t: { file: string; label: string; kind: string; default?: boolean }) => ({
       src: t.file,
