@@ -478,12 +478,54 @@ export default function Home() {
   allowfullscreen
   allow="autoplay; fullscreen; picture-in-picture">
 </iframe>`} />
-          <Code lang="javascript" title="Get embed URL via API" code={`// Domain auto-detects — works on localhost, Vercel, VPS, any domain
-const r = await fetch("/api/embeds/136197/sub")
-const { results } = await r.json()
+          <Code lang="javascript" title="How to switch episodes" code={`// 1. Fetch episode list from HiAnime API
+const eps = await fetch("https://api-rouge-zeta-61.vercel.app/api/episodes/one-piece-100")
+  .then(r => r.json()).then(j => j.results.episodes)
+// eps[0] = { id: "one-piece-100?ep=136197", episode_no: 1, title: "..." }
 
-// results.embedUrl  →  use as iframe src
-// results.iframe    →  ready-to-use <iframe> HTML`} />
+// 2. Extract the numeric episode ID
+const epId = eps[0].id.split("?ep=")[1]  // → "136197"
+
+// 3. Get embed URL from Cosmic API
+const { results } = await fetch(\`/api/embeds/\${epId}/sub\`).then(r => r.json())
+// results.embedUrl → "/embeds/136197/sub"
+
+// 4. Set iframe src — this changes the episode
+document.querySelector("iframe").src = results.embedUrl
+
+// 5. To switch to next episode, repeat with eps[1], eps[2], etc.`} />
+          <Code lang="javascript" title="Full episode switcher example" code={`const HIANIME = "https://api-rouge-zeta-61.vercel.app/api"
+const iframe = document.getElementById("player")
+let episodes = []
+let currentIndex = 0
+
+// Load episode list
+async function loadAnime(animeId) {
+  const r = await fetch(\`\${HIANIME}/episodes/\${animeId}\`)
+  const j = await r.json()
+  episodes = j.results.episodes
+  playEpisode(0)
+}
+
+// Play episode by index
+async function playEpisode(index) {
+  currentIndex = index
+  const ep = episodes[index]
+  const epId = ep.id.includes("?ep=") ? ep.id.split("?ep=")[1] : ep.id
+  const r = await fetch(\`/api/embeds/\${epId}/sub\`)
+  const { results } = await r.json()
+  iframe.src = results.embedUrl
+}
+
+// Auto-next on complete
+window.addEventListener("message", ({ data }) => {
+  if (data?.channel !== "cosmic") return
+  if (data.event === "complete" && currentIndex < episodes.length - 1) {
+    playEpisode(currentIndex + 1)
+  }
+})
+
+loadAnime("one-piece-100")`} />
         </div>
       </section>
 

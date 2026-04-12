@@ -36,8 +36,17 @@ export async function GET(
 
     if (!hlsUrl) return NextResponse.json({ success: false, error: 'No stream URL' }, { status: 404 })
 
-    // 3. Proxy the URL so browser never sees the real origin
-    const proxiedUrl = `${origin}/api/proxy?url=${encodeURIComponent(hlsUrl)}`
+    // 3. Proxy the URL — pass server name as referer hint
+    const serverReferers: Record<string, string> = {
+      'HD-1': 'https://megacloud.blog/',
+      'HD-2': 'https://megacloud.blog/',
+      'HD-3': 'https://rapid-cloud.co/',
+      'hd-1': 'https://megacloud.blog/',
+      'hd-2': 'https://megacloud.blog/',
+      'hd-3': 'https://rapid-cloud.co/',
+    }
+    const referer = serverReferers[server] ?? 'https://megacloud.blog/'
+    const proxiedUrl = `${origin}/api/proxy?url=${encodeURIComponent(hlsUrl)}&ref=${encodeURIComponent(referer)}`
 
     const tracks = (res?.tracks ?? item?.tracks ?? []).map((t: { file: string; label: string; kind: string; default?: boolean }) => ({
       src: t.file,
