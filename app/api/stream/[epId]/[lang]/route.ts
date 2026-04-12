@@ -36,9 +36,8 @@ export async function GET(
 
     if (!hlsUrl) return NextResponse.json({ success: false, error: 'No stream URL' }, { status: 404 })
 
-    // 3. Route through our proxy (which uses external CDN proxy internally)
-    // This keeps the m3u8 URL hidden AND handles CORS for the player
-    const proxiedUrl = `${origin}/api/proxy?url=${encodeURIComponent(hlsUrl)}`
+    // 3. Use external proxy directly — handles CDN auth + CORS
+    const proxiedUrl = `https://pro-xi-mocha.vercel.app/?url=${encodeURIComponent(hlsUrl)}`
 
     const tracks = (res?.tracks ?? item?.tracks ?? []).map((t: { file: string; label: string; kind: string; default?: boolean }) => ({
       src: t.file,
