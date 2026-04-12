@@ -166,7 +166,6 @@ export default function EmbedPlayer({ epId, lang }: { epId: string; lang: string
         ref={playerRef}
         src={stream.hlsUrl}
         style={{ width: '100%', height: '100%' }}
-        crossOrigin="anonymous"
         playsInline
         autoPlay
         onError={() => emit('error')}

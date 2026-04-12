@@ -36,8 +36,9 @@ export async function GET(
 
     if (!hlsUrl) return NextResponse.json({ success: false, error: 'No stream URL' }, { status: 404 })
 
-    // 3. Use external proxy directly — handles CDN auth + CORS
-    const proxiedUrl = `https://pro-xi-mocha.vercel.app/m3u8-proxy?url=${encodeURIComponent(hlsUrl)}`
+    // 3. Return the raw HLS URL directly — CDN allows browser requests
+    // Do NOT proxy — the CDN blocks server-to-server but allows browser fetch
+    const proxiedUrl = hlsUrl
 
     const tracks = (res?.tracks ?? item?.tracks ?? []).map((t: { file: string; label: string; kind: string; default?: boolean }) => ({
       src: t.file,

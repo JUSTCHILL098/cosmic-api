@@ -10,8 +10,10 @@ export default async function EmbedPage({
     <>
       <style>{`
         body{margin:0;padding:0;background:#000;overflow:hidden}
-        :root{--media-brand:#6366f1}
+        :root{--media-brand:#fff}
       `}</style>
+      {/* Tell browser to send Referer header to CDN */}
+      <meta name="referrer" content="no-referrer-when-downgrade" />
       <EmbedPlayer epId={epId} lang={lang} />
     </>
   )
