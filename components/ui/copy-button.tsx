@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 interface CopyButtonProps {
   text: string
   className?: string
-  variant?: 'outline' | 'ghost' | 'glass'
+  variant?: 'outline' | 'ghost'
 }
 
 export function CopyButton({ text, className, variant = 'ghost' }: CopyButtonProps) {
