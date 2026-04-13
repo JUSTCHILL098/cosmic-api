@@ -32,7 +32,7 @@ function SkipBtn({ label, visible, onClick }: { label: string; visible: boolean;
         border: '1px solid rgba(255,255,255,0.2)',
         borderRadius: 8, color: '#fff', cursor: 'pointer',
         fontSize: 13, fontWeight: 600, fontFamily: MONO,
-        zIndex: 50, boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+        boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
         transition: 'background 0.15s',
       }}
     >
