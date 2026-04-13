@@ -41,13 +41,14 @@ export async function GET(
 
     if (!hlsUrl) return NextResponse.json({ success: false, error: 'No stream URL' }, { status: 404 })
 
-    // 3. Proxy the m3u8 through our server — hides real CDN, adds CORS
-    const proxiedHls = `${origin}/api/proxy?url=${encodeURIComponent(hlsUrl)}`
+    // 3. Proxy through external proxy that handles CDN auth
+    const EXT = 'https://vid-max.vercel.app/api/proxy?url='
+    const proxiedHls = `${EXT}${encodeURIComponent(hlsUrl)}`
 
-    // 4. Proxy subtitle tracks too — hide their origin
+    // 4. Proxy subtitle tracks through same external proxy
     const rawTracks = res?.tracks ?? item?.tracks ?? []
     const tracks = rawTracks.map((t: { file: string; label: string; kind: string; default?: boolean }) => ({
-      src: `${origin}/api/proxy?url=${encodeURIComponent(t.file)}`,
+      src: `${EXT}${encodeURIComponent(t.file)}`,
       label: t.label,
       kind: t.kind,
       default: t.default,
