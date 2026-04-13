@@ -1,6 +1,12 @@
 'use client'
 import { useRef, useEffect, useState, useCallback } from 'react'
-import Hls from 'hls.js'
+import {
+  MediaPlayer, MediaProvider, Track,
+  type MediaPlayerInstance,
+} from '@vidstack/react'
+import { DefaultVideoLayout, defaultLayoutIcons } from '@vidstack/react/player/layouts/default'
+import '@vidstack/react/player/styles/default/theme.css'
+import '@vidstack/react/player/styles/default/layouts/video.css'
 import { SkipForward, WifiOff, Loader2 } from 'lucide-react'
 
 interface StreamTrack { src: string; label: string; kind: string; default?: boolean }
@@ -14,7 +20,6 @@ interface StreamData {
 
 const MONO = "'Geist Mono',ui-monospace,monospace"
 
-// Glass skip button
 function SkipBtn({ label, visible, onClick }: { label: string; visible: boolean; onClick: () => void }) {
   const [hov, setHov] = useState(false)
   if (!visible) return null
@@ -43,21 +48,22 @@ function SkipBtn({ label, visible, onClick }: { label: string; visible: boolean;
 }
 
 export default function EmbedPlayer({ epId, lang }: { epId: string; lang: string }) {
-  const videoRef   = useRef<HTMLVideoElement>(null)
-  const hlsRef     = useRef<Hls | null>(null)
-  const trackRefs  = useRef<HTMLTrackElement[]>([])
+  const playerRef  = useRef<MediaPlayerInstance>(null)
+  const mediaElRef = useRef<HTMLVideoElement | null>(null)
 
-  const [stream, setStream]     = useState<StreamData | null>(null)
-  const [loading, setLoading]   = useState(true)
-  const [error, setError]       = useState('')
-  const [blobSubs, setBlobSubs] = useState<StreamTrack[]>([])
-  const [curTime, setCurTime]   = useState(0)
+  const [stream, setStream]         = useState<StreamData | null>(null)
+  const [loading, setLoading]       = useState(true)
+  const [error, setError]           = useState('')
+  const [blobSubs, setBlobSubs]     = useState<StreamTrack[]>([])
+  const [curTime, setCurTime]       = useState(0)
+  const [showIntro, setShowIntro]   = useState(false)
+  const [showOutro, setShowOutro]   = useState(false)
 
   const emit = useCallback((event: string, extra?: object) => {
     window.parent?.postMessage({ channel: 'cosmic', event, epId, lang, ...extra }, '*')
   }, [epId, lang])
 
-  // Fetch stream
+  // Fetch stream — all URLs already proxied server-side
   useEffect(() => {
     const cleanId = epId.includes('?ep=') ? epId.split('?ep=')[1] : epId
     fetch(`/api/stream/${cleanId}/${lang}`)
@@ -67,14 +73,14 @@ export default function EmbedPlayer({ epId, lang }: { epId: string; lang: string
       .finally(() => setLoading(false))
   }, [epId, lang])
 
-  // Blob-preload subtitles
+  // Blob-preload subtitles from proxied URLs — instant display, no CORS lag
   useEffect(() => {
     if (!stream?.tracks?.length) { setBlobSubs([]); return }
     let cancelled = false
     const urls: string[] = []
     Promise.all(stream.tracks.map(async t => {
       try {
-        const res  = await fetch(t.src, { mode: 'cors' })
+        const res  = await fetch(t.src)
         const text = await res.text()
         const blob = new Blob([text], { type: 'text/vtt' })
         const url  = URL.createObjectURL(blob)
@@ -85,67 +91,58 @@ export default function EmbedPlayer({ epId, lang }: { epId: string; lang: string
     return () => { cancelled = true; urls.forEach(u => URL.revokeObjectURL(u)) }
   }, [stream?.tracks])
 
-  // Init hls.js with xhrSetup to inject Referer header
+  // Wire native video element for timeupdate + skip logic
   useEffect(() => {
-    const video = videoRef.current
-    if (!video || !stream?.hlsUrl) return
+    const player = playerRef.current
+    if (!player || !stream?.hlsUrl) return
 
-    hlsRef.current?.destroy()
+    const onReady = () => {
+      // @ts-ignore
+      const el: HTMLVideoElement | null = player.nativeEl ?? player.el?.querySelector('video')
+      if (!el) return
+      mediaElRef.current = el
 
-    if (Hls.isSupported()) {
-      const hls = new Hls({
-        enableWorker: true,
-        xhrSetup: (xhr: XMLHttpRequest) => {
-          // Inject the referer that MegaCloud CDN expects
-          xhr.setRequestHeader('Referer', 'https://megacloud.blog/')
-        },
-      })
-      hlsRef.current = hls
-      hls.loadSource(stream.hlsUrl)
-      hls.attachMedia(video)
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        video.play().catch(() => {})
-      })
-      hls.on(Hls.Events.ERROR, (_, data) => {
-        if (data.fatal) emit('error')
-      })
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari native HLS
-      video.src = stream.hlsUrl
-      video.play().catch(() => {})
+      const onTime = () => {
+        const t = el.currentTime
+        setCurTime(t)
+        if (!el.paused && el.duration > 0) emit('time', { time: t, duration: el.duration })
+      }
+      const onEnded = () => emit('complete')
+      const onErr   = () => emit('error')
+
+      el.addEventListener('timeupdate', onTime)
+      el.addEventListener('ended', onEnded)
+      el.addEventListener('error', onErr)
+      return () => {
+        el.removeEventListener('timeupdate', onTime)
+        el.removeEventListener('ended', onEnded)
+        el.removeEventListener('error', onErr)
+      }
     }
 
-    // Wire events
-    const onTime   = () => {
-      setCurTime(video.currentTime)
-      if (!video.paused && video.duration > 0) emit('time', { time: video.currentTime })
-    }
-    const onEnded  = () => emit('complete')
-    const onError  = () => emit('error')
-
-    video.addEventListener('timeupdate', onTime)
-    video.addEventListener('ended', onEnded)
-    video.addEventListener('error', onError)
-
+    // @ts-ignore
+    player.addEventListener?.('can-play', onReady)
+    const cleanup = onReady()
     return () => {
-      hlsRef.current?.destroy()
-      hlsRef.current = null
-      video.removeEventListener('timeupdate', onTime)
-      video.removeEventListener('ended', onEnded)
-      video.removeEventListener('error', onError)
+      // @ts-ignore
+      player.removeEventListener?.('can-play', onReady)
+      cleanup?.()
     }
   }, [stream?.hlsUrl, emit])
 
+  // Show/hide skip buttons
+  useEffect(() => {
+    setShowIntro(!!(stream?.intro && curTime >= stream.intro.start && curTime < stream.intro.end))
+    setShowOutro(!!(stream?.outro && curTime >= stream.outro.start && curTime < stream.outro.end))
+  }, [curTime, stream?.intro, stream?.outro])
+
   const skipIntro = useCallback(() => {
-    if (videoRef.current && stream?.intro) videoRef.current.currentTime = stream.intro.end
+    if (mediaElRef.current && stream?.intro) mediaElRef.current.currentTime = stream.intro.end
   }, [stream?.intro])
 
   const skipOutro = useCallback(() => {
-    if (videoRef.current && stream?.outro) videoRef.current.currentTime = stream.outro.end
+    if (mediaElRef.current && stream?.outro) mediaElRef.current.currentTime = stream.outro.end
   }, [stream?.outro])
-
-  const showIntro = !!stream?.intro && curTime >= stream.intro.start && curTime < stream.intro.end
-  const showOutro = !!stream?.outro && curTime >= stream.outro.start && curTime < stream.outro.end
 
   if (loading) return (
     <div style={{ width: '100%', height: '100vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -165,22 +162,34 @@ export default function EmbedPlayer({ epId, lang }: { epId: string; lang: string
 
   return (
     <div style={{ width: '100%', height: '100vh', background: '#000', position: 'relative', overflow: 'hidden' }}>
-      <video
-        ref={videoRef}
-        style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+      <style>{`:root{--media-brand:#fff;--media-focus-ring-color:rgba(255,255,255,0.4)}`}</style>
+
+      <MediaPlayer
+        ref={playerRef}
+        src={stream.hlsUrl}
+        style={{ width: '100%', height: '100%' }}
         playsInline
-        controls
+        autoPlay
+        onEnded={() => emit('complete')}
+        onError={() => emit('error')}
       >
-        {tracks.map((t, i) => (
-          <track
-            key={t.src + i}
-            src={t.src}
-            label={t.label || 'English'}
-            kind="subtitles"
-            default={t.default === true || i === 0}
-          />
-        ))}
-      </video>
+        <MediaProvider>
+          {tracks.map((t, i) => (
+            <Track
+              key={t.src + i}
+              src={t.src}
+              label={t.label || 'English'}
+              kind={t.kind as 'subtitles' | 'captions'}
+              default={t.default === true || i === 0}
+            />
+          ))}
+        </MediaProvider>
+        <DefaultVideoLayout
+          icons={defaultLayoutIcons}
+          noScrubGesture={false}
+          slots={{ pipButton: null }}
+        />
+      </MediaPlayer>
 
       <SkipBtn label="Skip Intro"  visible={showIntro} onClick={skipIntro} />
       <SkipBtn label="Skip Ending" visible={showOutro} onClick={skipOutro} />

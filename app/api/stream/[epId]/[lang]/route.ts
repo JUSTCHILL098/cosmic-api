@@ -8,8 +8,6 @@ export async function GET(
 ) {
   const { epId, lang } = await params
   const origin = req.nextUrl.origin
-
-  // Handle both "136197" and "one-piece-100?ep=136197" formats
   const cleanEpId = epId.includes('?ep=') ? epId.split('?ep=')[1] : epId
 
   try {
@@ -19,14 +17,21 @@ export async function GET(
     const servers: { serverName: string; type: string }[] =
       Array.isArray(sj.results) ? sj.results : sj.results?.servers ?? []
 
+    // Force HD-2 first, then HD-1, then any available
+    const preferred = ['HD-2', 'hd-2', 'HD-1', 'hd-1']
     const server =
-      servers.find(s => s.type === lang)?.serverName ??
-      servers.find(s => s.type === 'sub')?.serverName ??
-      servers[0]?.serverName
+      preferred.reduce<string | null>((found, name) => {
+        if (found) return found
+        return servers.find(s => s.serverName === name && s.type === lang)?.serverName
+          ?? servers.find(s => s.serverName === name)?.serverName
+          ?? null
+      }, null)
+      ?? servers.find(s => s.type === lang)?.serverName
+      ?? servers[0]?.serverName
 
     if (!server) return NextResponse.json({ success: false, error: 'No servers' }, { status: 404 })
 
-    // 2. Get stream — server-side only, m3u8 never reaches browser
+    // 2. Get stream — server-side only
     const r = await fetch(`${HIANIME}/stream?id=x?ep=${cleanEpId}&server=${server}&type=${lang}`)
     const j = await r.json()
     const res = j.results
@@ -36,12 +41,13 @@ export async function GET(
 
     if (!hlsUrl) return NextResponse.json({ success: false, error: 'No stream URL' }, { status: 404 })
 
-    // 3. Return the raw HLS URL directly — CDN allows browser requests
-    // Do NOT proxy — the CDN blocks server-to-server but allows browser fetch
-    const proxiedUrl = hlsUrl
+    // 3. Proxy the m3u8 through our server — hides real CDN, adds CORS
+    const proxiedHls = `${origin}/api/proxy?url=${encodeURIComponent(hlsUrl)}`
 
-    const tracks = (res?.tracks ?? item?.tracks ?? []).map((t: { file: string; label: string; kind: string; default?: boolean }) => ({
-      src: t.file,
+    // 4. Proxy subtitle tracks too — hide their origin
+    const rawTracks = res?.tracks ?? item?.tracks ?? []
+    const tracks = rawTracks.map((t: { file: string; label: string; kind: string; default?: boolean }) => ({
+      src: `${origin}/api/proxy?url=${encodeURIComponent(t.file)}`,
       label: t.label,
       kind: t.kind,
       default: t.default,
@@ -53,7 +59,7 @@ export async function GET(
     return NextResponse.json({
       success: true,
       results: {
-        hlsUrl: proxiedUrl,
+        hlsUrl: proxiedHls,
         tracks,
         intro: rawIntro?.end ? rawIntro : null,
         outro: rawOutro?.end ? rawOutro : null,
